@@ -1,0 +1,233 @@
+# Setup Django Application
+# Configures Python environment and deploys Django application
+---
+- name: Setup Django Application
+  hosts: webservers
+  become: yes
+  become_user: "{{ app_user }}"
+  
+  vars:
+    venv_path: "{{ app_home }}/venv"
+    requirements_file: "{{ app_home }}/requirements.txt"
+  
+  tasks:
+    - name: Create application directories
+      block:
+        - name: Create app home directory
+          file:
+            path: "{{ app_home }}"
+            state: directory
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0755'
+          become: yes
+          become_user: root
+        
+        - name: Create static files directory
+          file:
+            path: "{{ static_files_dir }}"
+            state: directory
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0755'
+          become: yes
+          become_user: root
+        
+        - name: Create media files directory
+          file:
+            path: "{{ media_files_dir }}"
+            state: directory
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0755'
+          become: yes
+          become_user: root
+        
+        - name: Create logs directory
+          file:
+            path: "{{ log_dir }}"
+            state: directory
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0755'
+          become: yes
+          become_user: root
+    
+    - name: Clone application repository
+      git:
+        repo: "{{ app_repository_url }}"
+        dest: "{{ app_home }}"
+        version: "{{ app_version | default('main') }}"
+        accept_hostkey: yes
+    
+    - name: Create Python virtual environment
+      block:
+        - name: Create venv
+          command: "{{ python_executable }} -m venv {{ venv_path }}"
+          args:
+            creates: "{{ venv_path }}/bin/activate"
+    
+    - name: Install Python dependencies
+      block:
+        - name: Upgrade pip
+          pip:
+            name: pip
+            state: latest
+            virtualenv: "{{ venv_path }}"
+        
+        - name: Install requirements
+          pip:
+            requirements: "{{ requirements_file }}"
+            virtualenv: "{{ venv_path }}"
+        
+        - name: Install gunicorn
+          pip:
+            name: gunicorn
+            virtualenv: "{{ venv_path }}"
+    
+    - name: Configure Django settings
+      block:
+        - name: Create .env file
+          template:
+            src: django.env.j2
+            dest: "{{ app_home }}/.env"
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0600'
+          become: yes
+          become_user: root
+        
+        - name: Create Django settings override
+          template:
+            src: local_settings.py.j2
+            dest: "{{ app_home }}/config/local_settings.py"
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0644'
+          become: yes
+          become_user: root
+    
+    - name: Run Django migrations
+      block:
+        - name: Create migration script
+          copy:
+            content: |
+              #!/bin/bash
+              source {{ venv_path }}/bin/activate
+              cd {{ app_home }}
+              python manage.py migrate --noinput
+            dest: "{{ app_home }}/migrate.sh"
+            mode: '0755'
+          become: yes
+          become_user: root
+        
+        - name: Execute migrations
+          command: "{{ app_home }}/migrate.sh"
+          environment:
+            PYTHONUNBUFFERED: "1"
+            DJANGO_SETTINGS_MODULE: "{{ django_settings }}"
+    
+    - name: Collect static files
+      block:
+        - name: Create collectstatic script
+          copy:
+            content: |
+              #!/bin/bash
+              source {{ venv_path }}/bin/activate
+              cd {{ app_home }}
+              python manage.py collectstatic --noinput
+            dest: "{{ app_home }}/collect_static.sh"
+            mode: '0755'
+          become: yes
+          become_user: root
+        
+        - name: Collect static files
+          command: "{{ app_home }}/collect_static.sh"
+          environment:
+            PYTHONUNBUFFERED: "1"
+            DJANGO_SETTINGS_MODULE: "{{ django_settings }}"
+    
+    - name: Setup Gunicorn service
+      block:
+        - name: Create gunicorn service file
+          template:
+            src: gunicorn.service.j2
+            dest: "/etc/systemd/system/mediflow-gunicorn.service"
+            owner: root
+            group: root
+            mode: '0644'
+          become: yes
+          become_user: root
+          notify: restart gunicorn
+        
+        - name: Create gunicorn socket file
+          template:
+            src: gunicorn.socket.j2
+            dest: "/etc/systemd/system/mediflow-gunicorn.socket"
+            owner: root
+            group: root
+            mode: '0644'
+          become: yes
+          become_user: root
+    
+    - name: Setup Nginx reverse proxy
+      block:
+        - name: Create nginx config
+          template:
+            src: nginx.conf.j2
+            dest: "/etc/nginx/sites-available/mediflow"
+            owner: root
+            group: root
+            mode: '0644'
+          become: yes
+          become_user: root
+          notify: restart nginx
+        
+        - name: Enable nginx site
+          file:
+            src: "/etc/nginx/sites-available/mediflow"
+            dest: "/etc/nginx/sites-enabled/mediflow"
+            state: link
+          become: yes
+          become_user: root
+    
+    - name: Create health check script
+      copy:
+        content: |
+          #!/bin/bash
+          # MediFlow Health Check Script
+          
+          DJANGO_URL="http://localhost:{{ app_port }}/health/"
+          TIMEOUT=5
+          
+          echo "Checking MediFlow health..."
+          
+          if curl -f -s -m $TIMEOUT "$DJANGO_URL" > /dev/null; then
+            echo "✓ MediFlow is running"
+            exit 0
+          else
+            echo "✗ MediFlow health check failed"
+            exit 1
+          fi
+        dest: "{{ app_home }}/health_check.sh"
+        mode: '0755'
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+      become: yes
+      become_user: root
+  
+  handlers:
+    - name: restart gunicorn
+      systemd:
+        name: mediflow-gunicorn
+        state: restarted
+        daemon_reload: yes
+      become: yes
+      become_user: root
+    
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+      become: yes
+      become_user: root

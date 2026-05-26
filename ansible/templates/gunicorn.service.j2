@@ -1,0 +1,38 @@
+[Unit]
+Description=Gunicorn service for {{ app_name }}
+After=network.target postgresql.service
+
+[Service]
+Type=notify
+User={{ app_user }}
+Group={{ app_group }}
+WorkingDirectory={{ app_home }}
+
+Environment="PATH={{ venv_path }}/bin"
+EnvironmentFile={{ app_home }}/.env
+
+ExecStart={{ venv_path }}/bin/gunicorn \
+    --workers {{ gunicorn_workers | default(4) }} \
+    --worker-class {{ gunicorn_worker_class | default('sync') }} \
+    --timeout {{ gunicorn_timeout | default(30) }} \
+    --bind unix:{{ app_home }}/gunicorn.sock \
+    --access-logfile {{ log_dir }}/gunicorn_access.log \
+    --error-logfile {{ log_dir }}/gunicorn_error.log \
+    --log-level {{ log_level | default('info') }} \
+    {{ django_wsgi }}
+
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGTERM
+Restart=on-failure
+RestartSec=10
+
+# Security and limits
+PrivateTmp=true
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier={{ app_name }}
+
+[Install]
+WantedBy=multi-user.target

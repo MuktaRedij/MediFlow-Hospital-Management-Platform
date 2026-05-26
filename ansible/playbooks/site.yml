@@ -1,0 +1,186 @@
+# Main Site Playbook
+# Orchestrates deployment of entire MediFlow platform
+---
+- name: Deploy MediFlow Healthcare Platform
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    deployment_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+  
+  pre_tasks:
+    - name: Display deployment information
+      debug:
+        msg: |
+          ╔════════════════════════════════════════════════════╗
+          ║     MEDIFLOW DEPLOYMENT PLAYBOOK                   ║
+          ║     Environment: {{ environment | upper }}
+          ║     Timestamp: {{ deployment_timestamp }}
+          ║     Target Hosts: {{ groups[inventory_hostname] | length }}
+          ╚════════════════════════════════════════════════════╝
+  
+    - name: Validate inventory
+      assert:
+        that:
+          - groups['webservers'] is defined
+          - groups['databases'] is defined
+        fail_msg: "Required host groups not found in inventory"
+  
+    - name: Gather package facts
+      package_facts:
+        manager: auto
+  
+    - name: Check system requirements
+      assert:
+        that:
+          - ansible_os_family is defined
+          - ansible_distribution in ['Ubuntu', 'Debian', 'CentOS']
+        fail_msg: "Unsupported operating system"
+  
+  tasks:
+    - name: Update system packages
+      block:
+        - name: Update apt cache
+          apt:
+            update_cache: yes
+            cache_valid_time: 3600
+          when: ansible_os_family == "Debian"
+        
+        - name: Upgrade system packages
+          apt:
+            upgrade: safe
+          when: ansible_os_family == "Debian"
+  
+    - name: Install system dependencies
+      block:
+        - name: Install common packages
+          package:
+            name: "{{ item }}"
+            state: present
+          loop:
+            - git
+            - curl
+            - wget
+            - vim
+            - htop
+            - net-tools
+            - python3
+            - python3-pip
+            - python3-venv
+            - build-essential
+            - libssl-dev
+            - libffi-dev
+            - postgresql-client
+          when: ansible_os_family == "Debian"
+        
+        - name: Install system packages (CentOS)
+          yum:
+            name: "{{ item }}"
+            state: present
+          loop:
+            - git
+            - curl
+            - wget
+            - vim
+            - htop
+            - net-tools
+            - python3
+            - python3-pip
+            - gcc
+            - openssl-devel
+            - postgresql
+          when: ansible_os_family == "RedHat"
+  
+    - name: Configure system settings
+      block:
+        - name: Set system hostname
+          hostname:
+            name: "mediflow-{{ environment }}-{{ inventory_hostname_short }}"
+            use: systemd
+        
+        - name: Configure system timezone
+          timezone:
+            name: UTC
+        
+        - name: Setup system limits
+          template:
+            src: limits.conf.j2
+            dest: /etc/security/limits.d/99-mediflow.conf
+            owner: root
+            group: root
+            mode: '0644'
+  
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg: |
+          ╔════════════════════════════════════════════════════╗
+          ║     DEPLOYMENT SUMMARY                             ║
+          ║     Status: SUCCESSFUL                             ║
+          ║     Hosts Configured: {{ play_hosts | length }}
+          ║     Duration: {{ ansible_date_time.iso8601 }}
+          ╚════════════════════════════════════════════════════╝
+  
+  handlers:
+    - name: restart systemd
+      systemd:
+        daemon_reload: yes
+
+- name: Configure Web Servers
+  hosts: webservers
+  become: yes
+  
+  roles:
+    - role: common
+      tags: ['common', 'always']
+    
+    - role: django
+      tags: ['django', 'app']
+  
+  post_tasks:
+    - name: Verify web server health
+      uri:
+        url: "http://localhost:{{ app_port }}"
+        status_code: 200,302
+      register: health_check
+      retries: 3
+      delay: 10
+
+- name: Configure Database Servers
+  hosts: databases
+  become: yes
+  
+  roles:
+    - role: common
+      tags: ['common', 'always']
+    
+    - role: postgresql
+      tags: ['database', 'postgres']
+  
+  post_tasks:
+    - name: Verify database connectivity
+      postgresql_info:
+        filter: "!settings"
+      register: postgres_info
+      failed_when: not postgres_info.version
+
+- name: Configure Email Service
+  hosts: email_service
+  become: yes
+  
+  roles:
+    - role: common
+      tags: ['common', 'always']
+    
+    - role: email-service
+      tags: ['email', 'service']
+  
+  post_tasks:
+    - name: Verify email service
+      uri:
+        url: "{{ email_service_url }}/health"
+        method: GET
+      register: email_health
+      retries: 3
+      delay: 10

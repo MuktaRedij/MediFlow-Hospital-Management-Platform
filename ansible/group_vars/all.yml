@@ -1,0 +1,59 @@
+# All Hosts Configuration
+---
+# Application Settings
+app_name: mediflow
+app_user: django
+app_group: django
+app_home: /opt/mediflow
+app_port: 8000
+
+# Python Configuration
+python_version: "3.10"
+python_executable: "/usr/bin/python3.10"
+pip_executable: "/usr/bin/pip3.10"
+
+# Django Settings
+django_settings: "config.settings"
+django_wsgi: "config.wsgi"
+secret_key: "{{ vault_django_secret_key }}"
+debug: false
+
+# Database Configuration
+db_host: "{{ groups['databases'][0] if 'databases' in groups else 'localhost' }}"
+db_port: 5432
+db_name: mediflow_db
+db_user: "{{ vault_db_user }}"
+db_password: "{{ vault_db_password }}"
+
+# Email Service Configuration
+email_service_url: "https://email-service.example.com"
+email_from_address: "noreply@mediflow.local"
+
+# Google Calendar Integration
+google_calendar_enabled: true
+google_calendar_api_url: "https://www.googleapis.com/calendar/v3"
+
+# Environment Variables
+environment_variables:
+  DEBUG: "False"
+  ALLOWED_HOSTS: "mediflow.local,www.mediflow.local"
+  EMAIL_BACKEND: "django.core.mail.backends.smtp.EmailBackend"
+
+# Logging Configuration
+log_level: INFO
+log_dir: /var/log/mediflow
+log_retention_days: 30
+
+# Security Settings
+enable_ssl: true
+ssl_cert_path: "/etc/ssl/certs/mediflow.crt"
+ssl_key_path: "/etc/ssl/private/mediflow.key"
+
+# Monitoring
+enable_monitoring: true
+monitoring_port: 9100
+
+# Backup Configuration
+backup_enabled: true
+backup_schedule: "daily"
+backup_retention_days: 30

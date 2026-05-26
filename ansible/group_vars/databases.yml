@@ -1,0 +1,38 @@
+# Database Server Configuration
+---
+# PostgreSQL Configuration
+postgresql_version: "14"
+postgresql_port: 5432
+postgresql_max_connections: 200
+postgresql_shared_buffers: "256MB"
+postgresql_effective_cache_size: "1GB"
+postgresql_work_mem: "16MB"
+
+# Database Settings
+databases:
+  - name: mediflow_db
+    owner: "{{ vault_db_user }}"
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+
+# Replication Settings
+enable_replication: false
+backup_slot_name: "backup_slot"
+
+# Connection Settings
+postgresql_listen_addresses: "*"
+ssl_enabled: true
+
+# Authentication
+postgresql_auth_method: "md5"
+
+# Performance Tuning
+autovacuum_enabled: true
+autovacuum_naptime: 60
+autovacuum_vacuum_scale_factor: 0.1
+
+# Monitoring
+enable_pg_stat_statements: true
+log_queries_enabled: true
+log_min_duration_statement: 1000

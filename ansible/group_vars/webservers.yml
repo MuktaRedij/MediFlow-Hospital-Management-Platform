@@ -1,0 +1,40 @@
+# Web Servers Configuration
+---
+# Gunicorn Configuration
+gunicorn_workers: 4
+gunicorn_threads: 2
+gunicorn_bind: "0.0.0.0:{{ app_port }}"
+gunicorn_worker_class: "sync"
+gunicorn_timeout: 30
+
+# Nginx Configuration
+nginx_port: 80
+nginx_secure_port: 443
+nginx_worker_processes: auto
+nginx_worker_connections: 1024
+
+# Static Files
+static_files_dir: "{{ app_home }}/static"
+media_files_dir: "{{ app_home }}/media"
+static_files_enabled: true
+
+# Performance Tuning
+enable_gzip: true
+gzip_types: "text/plain text/css text/javascript application/json"
+cache_timeout: 3600
+
+# Session Configuration
+session_cookie_secure: true
+session_cookie_httponly: true
+session_cookie_samesite: "Lax"
+
+# CORS Settings
+cors_enabled: true
+cors_allowed_origins:
+  - "https://mediflow.local"
+  - "https://www.mediflow.local"
+
+# Rate Limiting
+rate_limiting_enabled: true
+rate_limit_requests: 100
+rate_limit_period: 3600
